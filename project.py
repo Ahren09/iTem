@@ -3,7 +3,7 @@ from flask import Flask, render_template, request, redirect,jsonify, url_for, fl
 
 from sqlalchemy import create_engine, asc
 from sqlalchemy.orm import sessionmaker
-from database_setup import Base, Restaurant, MenuItem
+from database_setup import Base, Restaurant, MenuItem, User
 
 from flask import session as login_session
 import random, string
@@ -32,6 +32,7 @@ def showLogin():
 	login_session['state'] = state
 	return render_template('login.html', STATE=state)
 
+# CONNECT
 @app.route('/gconnect', methods=['POST'])
 def gconnect():
     if request.args.get('state')!=login_session['state']:
@@ -63,10 +64,15 @@ def gconnect():
             json.dumps("Token's user UD doesn't match given user ID."), 401)
         response.headers['Content-Type'] = 'application/json'
         return response
+    if result['issued_to']!=CLIENT_ID:
+    	response=make_response(json.dumps("Token's client ID does not match."),401)
+    	print "Token's client ID does not match app's."
+    	response.headers['Content-Type'] = 'application/json'
+    	return response
 
-    stored_credentials = login_session.get('credentials')
+    stored_access_token = login_session.get('access_token')
     stored_gplus_id=login_session.get('gplus_id')
-    if stored_credentials is not None and gplus_id == stored_gplus_id:
+    if stored_access_token is not None and gplus_id == stored_gplus_id:
         response = make_response(json.dumps('Current user is already Connected'), 200)
         response.headers['Content-Type'] = 'application/json'
         return response
@@ -76,9 +82,8 @@ def gconnect():
 
     userinfo_url="https://www.googleapis.com/oauth2/v1/userinfo"
     params = {'access_token': credentials.access_token, 'alt':'json'}
-    answer = request.get(userinfo_url, params=params)
-
-    data.answer.json()
+    answer = requests.get(userinfo_url, params=params)
+    data = answer.json()
 
     login_session['username'] = data['name']
     login_session['picture'] = data['picture']
@@ -94,6 +99,62 @@ def gconnect():
     flash("you are now logged in as %s" % login_session['username'])
     print "done!"
     return output
+
+# User Helper Functions
+def createUser(login_session):
+    DBSession = sessionmaker(bind=engine)
+    session = DBSession()
+    newUser = User(name=login_session['username'], email=login_session['email'], picture=login_session['picture'])
+    session.commit()
+    user = session.query(User).filter_by(email=login_session['email']).one()
+    return user.id
+
+def getUserInfo(user_id):
+    DBSession = sessionmaker(bind=engine)
+    session = DBSession()
+    user = session.query(User).filter_by(id=user_id).one()
+    return user
+
+def getUserID(email):
+    DBSession = sessionmaker(bind=engine)
+    session = DBSession()
+    try:
+        user = session.query(User).filter_by(email=email).one()
+        return user.id
+    except:
+        return None
+
+
+# DISCONNECT
+@app.route('/gdisconnect')
+def gdisconnect():
+	access_token = login_session.get('access_token')
+	if access_token is None:
+		print 'Access Token is None'
+		response = make_response(json.dumps('Current user not connected.'), 401)
+		response.headers['Content-Type'] = 'application/json'
+		return response
+	print 'In gdisconnect access token is %s', access_token
+	print 'User name is: '
+	print login_session['username']
+	url = 'https://accounts.google.com/o/oauth2/revoke?token=%s' % login_session['access_token']
+	h = httplib2.Http()
+	result = h.request(url, 'GET')[0]
+	print 'result is '
+	print result
+	if result['status'] == '200':
+		del login_session['access_token']
+		del login_session['gplus_id']
+		del login_session['username']
+		del login_session['email']
+		del login_session['picture']
+		response = make_response(json.dumps('Successfully disconnected'), 200)
+		response.headers['Content-Type'] = 'application/json'
+		return response
+	else:
+		response = make_response(json.dumps('Failed to revoke token for given user.'), 400)
+		response.headers['Content-Type'] = 'application/json'
+		return response
 
 
 #JSON APIs to view Restaurant Information
@@ -133,6 +194,8 @@ def showRestaurants():
 #Create a new restaurant
 @app.route('/restaurant/new/', methods=['GET','POST'])
 def newRestaurant():
+    if 'username' not in login_session:
+        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     if request.method == 'POST':
@@ -147,6 +210,8 @@ def newRestaurant():
 #Edit a restaurant
 @app.route('/restaurant/<int:restaurant_id>/edit/', methods = ['GET', 'POST'])
 def editRestaurant(restaurant_id):
+    if 'username' not in login_session:
+        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     editedRestaurant = session.query(Restaurant).filter_by(id = restaurant_id).one()
@@ -162,6 +227,8 @@ def editRestaurant(restaurant_id):
 #Delete a restaurant
 @app.route('/restaurant/<int:restaurant_id>/delete/', methods = ['GET','POST'])
 def deleteRestaurant(restaurant_id):
+    if 'username' not in login_session:
+        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     restaurantToDelete = session.query(Restaurant).filter_by(id = restaurant_id).one()
@@ -188,6 +255,8 @@ def showMenu(restaurant_id):
 #Create a new menu item
 @app.route('/restaurant/<int:restaurant_id>/menu/new/',methods=['GET','POST'])
 def newMenuItem(restaurant_id):
+    if 'username' not in login_session:
+        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     restaurant = session.query(Restaurant).filter_by(id = restaurant_id).one()
@@ -203,6 +272,8 @@ def newMenuItem(restaurant_id):
 #Edit a menu item
 @app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/edit', methods=['GET','POST'])
 def editMenuItem(restaurant_id, menu_id):
+    if 'username' not in login_session:
+        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     editedItem = session.query(MenuItem).filter_by(id = menu_id).one()
@@ -227,6 +298,8 @@ def editMenuItem(restaurant_id, menu_id):
 #Delete a menu item
 @app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/delete', methods = ['GET','POST'])
 def deleteMenuItem(restaurant_id,menu_id):
+    if 'username' not in login_session:
+        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     restaurant = session.query(Restaurant).filter_by(id = restaurant_id).one()
