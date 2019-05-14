@@ -24,7 +24,7 @@ engine = create_engine('sqlite:///restaurantmenuwithusers.db')
 Base.metadata.bind = engine
 
 
-@app.route('/login')
+@app.route('/login/')
 def showLogin():
 	state = ''.join(random.choice(string.ascii_uppercase+string.digits) for x in xrange(32))
 	login_session['state'] = state
@@ -161,7 +161,6 @@ def gdisconnect():
 		response = make_response(json.dumps('Failed to revoke token for given user.'), 400)
 		response.headers['Content-Type'] = 'application/json'
 		return response
-
 
 #JSON APIs to view Restaurant Information
 @app.route('/restaurant/<int:restaurant_id>/menu/JSON/')
