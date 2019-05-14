@@ -1,19 +1,17 @@
-from flask import Flask, render_template, request, redirect,jsonify, url_for, flash
-
-
+from flask import Flask, render_template, request, redirect, jsonify, url_for, flash
 from sqlalchemy import create_engine, asc
 from sqlalchemy.orm import sessionmaker
 from database_setup import Base, Restaurant, MenuItem, User
-
 from flask import session as login_session
-import random, string
-
+import random
+import string
 from oauth2client.client import flow_from_clientsecrets
 from oauth2client.client import FlowExchangeError
 import httplib2
 import json
 from flask import make_response
 import requests
+
 
 app = Flask(__name__)
 
@@ -22,7 +20,7 @@ CLIENT_ID = json.loads(
 
 
 #Connect to Database and create database session
-engine = create_engine('sqlite:///restaurantmenu.db')
+engine = create_engine('sqlite:///restaurantmenuwithusers.db')
 Base.metadata.bind = engine
 
 
@@ -61,7 +59,7 @@ def gconnect():
 
     if result['user_id']!=gplus_id:
         response = make_response(
-            json.dumps("Token's user UD doesn't match given user ID."), 401)
+            json.dumps("Token's user ID doesn't match given user ID."), 401)
         response.headers['Content-Type'] = 'application/json'
         return response
     if result['issued_to']!=CLIENT_ID:
@@ -89,6 +87,12 @@ def gconnect():
     login_session['picture'] = data['picture']
     login_session['email'] = data['email']
 
+    user_id = getUserID(login_session['email'])
+    if not user_id:
+        user_id = createUser(login_session)
+    else:
+        login_session['user_id'] = user_id
+
     output = ''
     output += '<h1>Welcome, '
     output += login_session['username']
@@ -104,7 +108,9 @@ def gconnect():
 def createUser(login_session):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    # The user id is created implicitly
     newUser = User(name=login_session['username'], email=login_session['email'], picture=login_session['picture'])
+    session.add(newUser)
     session.commit()
     user = session.query(User).filter_by(email=login_session['email']).one()
     return user.id
@@ -158,7 +164,7 @@ def gdisconnect():
 
 
 #JSON APIs to view Restaurant Information
-@app.route('/restaurant/<int:restaurant_id>/menu/JSON')
+@app.route('/restaurant/<int:restaurant_id>/menu/JSON/')
 def restaurantMenuJSON(restaurant_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
@@ -167,7 +173,7 @@ def restaurantMenuJSON(restaurant_id):
     return jsonify(MenuItems=[i.serialize for i in items])
 
 
-@app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/JSON')
+@app.route('/restaurant/<int:restaurant_id>/menu/<int:menu_id>/JSON/')
 def menuItemJSON(restaurant_id, menu_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
@@ -188,8 +194,11 @@ def restaurantsJSON():
 def showRestaurants():
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
-    restaurants = session.query(Restaurant).order_by(asc(Restaurant.name))
-    return render_template('restaurants.html', restaurants = restaurants)
+    restaurants = session.query(Restaurant).all()
+    if 'username' not in login_session:
+        return render_template('publicrestaurants.html', restaurants=restaurants)
+    else:
+        return render_template('restaurants.html', restaurants=restaurants)
 
 #Create a new restaurant
 @app.route('/restaurant/new/', methods=['GET','POST'])
@@ -227,11 +236,15 @@ def editRestaurant(restaurant_id):
 #Delete a restaurant
 @app.route('/restaurant/<int:restaurant_id>/delete/', methods = ['GET','POST'])
 def deleteRestaurant(restaurant_id):
-    if 'username' not in login_session:
-        return redirect('/login')
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
+    if 'username' not in login_session:
+        return redirect('/login')
     restaurantToDelete = session.query(Restaurant).filter_by(id = restaurant_id).one()
+    if 'username' not in login_session:
+        return redirect('/login')
+    if restaurantToDelete.user_id != login_session['user_id']:
+        return "<script>function my Function() {alert('You are not authorized to delete this restuarant.');}</script><body onload='myFunction')''>"
     if request.method == 'POST':
         session.delete(restaurantToDelete)
         flash('%s Successfully Deleted' % restaurantToDelete.name)
@@ -247,8 +260,12 @@ def showMenu(restaurant_id):
     DBSession = sessionmaker(bind=engine)
     session = DBSession()
     restaurant = session.query(Restaurant).filter_by(id = restaurant_id).one()
+    creator = getUserInfo(restaurant.user_id)
     items = session.query(MenuItem).filter_by(restaurant_id = restaurant_id).all()
-    return render_template('menu.html', items = items, restaurant = restaurant)
+    if 'username' not in login_session or creator.id != login_session['user_id']:
+        return render_template('publicmenu.html', items = items, restaurant = restaurant, creator = creator)
+    else:
+        return render_template('menu.html', items = items, restaurant = restaurant, creator = creator)
      
 
 
