@@ -101,21 +101,14 @@
   }
 </script>
 
+<!--Add Facebook sign-in functionality-->
 <div id="fb-root"></div>
 <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js#xfbml=1&version=v3.3&appId=2134573880179539&autoLogAppEvents=1"></script>
 
-<div class="fb-login-button" data-width="" data-size="small" data-button-type="login_with" data-auto-logout-link="false" data-use-continue-as="true"></div>
-
-<button>
-
-
-          <fb:login-button scope="public_profile,email" onlogin="sendTokenToServer();">
-<a href='javascript:sendTokenToServer()'>Login with Facebook BA</a>
-
-</fb:login-button>
+<!--Facebook sign-in button-->
+<div class="fb-login-button" data-width="" data-size="small" data-button-type="login_with" data-auto-logout-link="false" data-use-continue-as="true" scope="public_profile,email" onlogin="sendTokenToServer();">Login With Facebook</div>
 
 
-        </button>
 <!--END FACEBOOK SIGN IN -->
   </script>
 </body>
